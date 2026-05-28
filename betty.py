@@ -150,7 +150,6 @@ class LyricSyncApp:
 
         self.audio_path = "betty.mp3"
 
-        # Window size for each lyric square GUI
         screen_h = self.root.winfo_screenheight()
         if screen_h < 700:
             self.win_size = 350
@@ -159,40 +158,31 @@ class LyricSyncApp:
         else:
             self.win_size = 500
         self.margin = 6
-        self.pixel_scale = 4  # Higher = more pixelated
+        self.pixel_scale = 4
 
-        # Track state
-        self.windows = {}          # block_index -> {"win": Toplevel, "canvas": Canvas}
-        self.window_positions = {} # block_index -> {"x": x, "y": y}
-        self.last_word_counts = {} # block_index -> last visible word count
+        self.windows = {}
+        self.window_positions = {}
+        self.last_word_counts = {}
         self.music_started = False
 
-        # Pre-compute layouts for each block
         self.block_font_sizes = []
-        self.block_layouts = []    # block_index -> list of visual lines
+        self.block_layouts = []
         for block_idx in range(len(self.lyrics)):
             font_size = self._calc_font_size(block_idx)
             self.block_font_sizes.append(font_size)
             layout = self._build_layout(block_idx, font_size)
             self.block_layouts.append(layout)
 
-        # Initialize Audio & Load (but do not play yet)
         pygame.mixer.init()
         if os.path.exists(self.audio_path):
             pygame.mixer.music.load(self.audio_path)
 
-        # Create first window immediately and start music when it opens
         self.create_window(0)
         self.windows[0]["win"].bind("<Map>", lambda e: self.start_music() if e.widget == self.windows[0]["win"] else None)
 
-        # Start tick cycle
         self.tick()
 
-    # ── Layout helpers ──────────────────────────────────────────────
-
     def _get_real_words(self, block_index):
-        """Extract paragraphs of real words (non-\\n) with their sequential index.
-        Returns list of paragraphs, each a list of (real_index, text)."""
         block = self.lyrics[block_index]
         paragraphs = []
         current = []
@@ -210,9 +200,6 @@ class LyricSyncApp:
         return paragraphs
 
     def _wrap_paragraph(self, para_words, font, available_width):
-        """Wrap a paragraph's words into visual lines based on word + space width.
-        para_words: list of (real_index, text).
-        Returns list of visual lines, each a list of (real_index, text)."""
         space_width = font.measure(" ")
         lines = []
         current_line = []
@@ -221,7 +208,6 @@ class LyricSyncApp:
         for idx, text in para_words:
             w = font.measure(text)
             if current_line:
-                # Need space + word to fit
                 test_width = current_width + space_width + w
                 if test_width > available_width:
                     lines.append(current_line)
@@ -231,7 +217,6 @@ class LyricSyncApp:
                     current_line.append((idx, text))
                     current_width = test_width
             else:
-                # First word on line
                 current_line.append((idx, text))
                 current_width = w
 
@@ -240,7 +225,6 @@ class LyricSyncApp:
         return lines
 
     def _build_layout(self, block_index, font_size, font_family="Arial"):
-        """Build the complete visual layout: list of visual lines with word positions."""
         available = self.win_size - 2 * self.margin
         f = tkfont.Font(family=font_family, size=font_size, weight="normal")
         paragraphs = self._get_real_words(block_index)
@@ -251,7 +235,6 @@ class LyricSyncApp:
         return visual_lines
 
     def _count_visual_lines(self, block_index, font, available_width):
-        """Count total visual lines after wrapping for a block with a given font."""
         paragraphs = self._get_real_words(block_index)
         total = 0
         for para in paragraphs:
@@ -260,8 +243,6 @@ class LyricSyncApp:
         return total
 
     def _calc_font_size(self, block_index, font_family="Arial"):
-        """Binary search for the largest font size where all words fit
-        (with wrapping) inside the window."""
         min_size = 10
         max_size = 500
         optimal = min_size
@@ -272,7 +253,6 @@ class LyricSyncApp:
             f = tkfont.Font(family=font_family, size=mid, weight="normal")
             line_height = f.metrics("linespace")
 
-            # Every individual word must fit in width
             all_fit = True
             for para in self._get_real_words(block_index):
                 for _, text in para:
@@ -286,7 +266,6 @@ class LyricSyncApp:
                 max_size = mid - 1
                 continue
 
-            # Count visual lines (with wrapping) and check height
             num_lines = self._count_visual_lines(block_index, f, usable)
             total_height = line_height * num_lines
 
@@ -298,10 +277,7 @@ class LyricSyncApp:
 
         return optimal
 
-    # ── Visibility ──────────────────────────────────────────────────
-
     def get_visible_count(self, block_index, current_time):
-        """Count how many real (non-\\n) words are visible at current_time."""
         block = self.lyrics[block_index]
         count = 0
         for w in block["words"]:
@@ -312,10 +288,7 @@ class LyricSyncApp:
                 break
         return count
 
-    # ── Window management ───────────────────────────────────────────
-
     def create_window(self, block_index):
-        """Spawn a new square Toplevel window for a lyric block, cascaded."""
         win = tk.Toplevel(self.root)
         win.title(f"Betty")
         win.configure(bg="#ffffff")
@@ -324,11 +297,9 @@ class LyricSyncApp:
         screen_w = win.winfo_screenwidth()
         screen_h = win.winfo_screenheight()
         
-        # Max bounds for top-left corner
         max_x = max(0, screen_w - self.win_size)
         max_y = max(0, screen_h - self.win_size - 60)
         
-        # Min pixels of an existing window that must remain visible if they overlap
         min_visible = 120
         
         import random
@@ -336,13 +307,11 @@ class LyricSyncApp:
             x = random.randint(0, max_x)
             y = random.randint(0, max_y)
             
-            # Check overlap with existing active windows
             too_much_overlap = False
             for ex_idx, ex_pos in self.window_positions.items():
                 if ex_idx in self.windows and self.windows[ex_idx]["win"].winfo_exists():
                     ex_x = ex_pos["x"]
                     ex_y = ex_pos["y"]
-                    # If they cover each other too much (leaving less than min_visible visible on both dimensions)
                     if abs(x - ex_x) < (self.win_size - min_visible) and abs(y - ex_y) < (self.win_size - min_visible):
                         too_much_overlap = True
                         break
@@ -368,11 +337,7 @@ class LyricSyncApp:
         self.windows[block_index] = {"win": win, "canvas": canvas}
         self.last_word_counts[block_index] = 0
 
-    # ── Drawing ─────────────────────────────────────────────────────
-
     def draw_block(self, block_index, visible_count):
-        """Draw the layout at low resolution, then upscale with nearest-neighbor
-        for a pixelated look. Only words with index < visible_count are drawn."""
         info = self.windows[block_index]
         canvas = info["canvas"]
         canvas.delete("all")
@@ -381,7 +346,6 @@ class LyricSyncApp:
         font_size = self.block_font_sizes[block_index]
         scale = self.pixel_scale
 
-        # Render at reduced resolution
         small_size = self.win_size // scale
         small_font_size = max(font_size // scale, 6)
         small_margin = max(self.margin // scale, 2)
@@ -410,24 +374,19 @@ class LyricSyncApp:
                 word_w = draw.textlength(text, font=pil_font)
                 x += word_w + space_width
 
-        # Upscale with nearest-neighbor for pixelated effect
         pixelated = img.resize((self.win_size, self.win_size), Image.NEAREST)
 
         photo = ImageTk.PhotoImage(pixelated)
         canvas.create_image(0, 0, image=photo, anchor="nw")
-        info["photo"] = photo  # Keep reference to prevent garbage collection
+        info["photo"] = photo
 
     def start_music(self):
-        """Start audio playback once the GUI is mapped."""
         if not self.music_started:
             self.music_started = True
             if os.path.exists(self.audio_path):
                 pygame.mixer.music.play()
 
-    # ── Main loop ───────────────────────────────────────────────────
-
     def tick(self):
-        """Background callback running every 50ms to advance clock and sync lyrics."""
         if pygame.mixer.music.get_busy():
             current_time = pygame.mixer.music.get_pos() / 1000.0
 
@@ -448,7 +407,6 @@ class LyricSyncApp:
         self.root.after(50, self.tick)
 
     def quit_app(self):
-        """Stop audio and close the application."""
         try:
             pygame.mixer.music.stop()
             pygame.mixer.quit()
